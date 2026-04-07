@@ -30,9 +30,16 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             echo "Vercel deploy attempt ${attempt}"
-            if vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}; then
-              exit 0
+            output="$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} 2>&1 || true)"
+            printf '%s\n' "$output"
+
+            if echo "$output" | grep -q "Production:"; then
+              url="$(echo "$output" | grep -Eo 'https://[^ ]+vercel.app' | tail -n 1)"
+              if [ -n "$url" ] && vercel inspect "$url" --timeout=300 --token=${{ secrets.VERCEL_TOKEN }}; then
+                exit 0
+              fi
             fi
+
             if [ "$attempt" -lt 3 ]; then
               sleep 20
             fi
