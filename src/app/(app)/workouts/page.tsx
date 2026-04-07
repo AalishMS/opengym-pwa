@@ -155,7 +155,7 @@ export default function WorkoutsPage() {
 
   return (
     <section className="space-y-3">
-      <div className="sticky top-0 z-40 overflow-x-auto border-y border-border bg-card">
+      <div className="sticky top-14 z-40 overflow-x-auto border-y border-border bg-card">
         <div className="flex min-w-max">
           {plansQuery.data?.map((plan) => {
             const isSelected = plan.name === (selectedPlanName ?? plansQuery.data?.[0]?.name);
@@ -178,53 +178,24 @@ export default function WorkoutsPage() {
       </div>
 
       <form className="space-y-3" onSubmit={onSubmit}>
-        <div className="sticky top-10 z-30 border-y border-border bg-card p-2">
-          <div className="flex overflow-x-auto">
-            {availableWeeks.map((week) => {
-              const selected = week === currentWeek;
-              return (
-                <button
-                  key={week}
-                  type="button"
-                  onClick={() => form.setValue("week_number", week)}
-                  className={`mr-1 border px-3 py-1 text-[11px] ${
-                    selected
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border"
-                  }`}
-                >
-                  WEEK {week}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => {
-                const next = Math.max(...availableWeeks) + 1;
-                form.setValue("week_number", next);
-              }}
-              className="border border-primary px-3 py-1 text-[11px] text-primary"
-            >
-              [+ WEEK {Math.max(...availableWeeks) + 1}]
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-2">
           <Input
             type="text"
-            readOnly
             aria-label="Plan name"
+            placeholder="Workout title"
             className="border-border bg-card text-xs"
             {...form.register("plan_name")}
           />
-          <Input
-            type="number"
-            min={1}
-            aria-label="Week number"
-            className="border-border bg-card text-xs"
-            {...form.register("week_number", { valueAsNumber: true })}
-          />
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-bold text-muted-foreground">WEEK</p>
+            <Input
+              type="number"
+              min={1}
+              aria-label="Week number"
+              className="border-border bg-card text-xs"
+              {...form.register("week_number", { valueAsNumber: true })}
+            />
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -241,20 +212,54 @@ export default function WorkoutsPage() {
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="border-primary text-primary"
-            onClick={() =>
-              exercisesFieldArray.append(createDefaultExercise(exercisesFieldArray.fields.length))
-            }
-          >
-            [ + ADD EXERCISE ]
-          </Button>
-          <Button type="submit" disabled={mutation.isPending || form.formState.isSubmitting}>
-            {mutation.isPending ? "[ SAVING... ]" : "[ SAVE WORKOUT ]"}
-          </Button>
+        <div className="sticky bottom-0 z-30 space-y-2 bg-background pb-1">
+          <div className="border-y border-border bg-card p-2">
+            <div className="flex overflow-x-auto">
+              {availableWeeks.map((week) => {
+                const selected = week === currentWeek;
+                return (
+                  <button
+                    key={week}
+                    type="button"
+                    onClick={() => form.setValue("week_number", week)}
+                    className={`mr-1 border px-3 py-1 text-[11px] ${
+                      selected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border"
+                    }`}
+                  >
+                    WEEK {week}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = Math.max(...availableWeeks) + 1;
+                  form.setValue("week_number", next);
+                }}
+                className="border border-primary px-3 py-1 text-[11px] text-primary"
+              >
+                [+ WEEK {Math.max(...availableWeeks) + 1}]
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-primary text-primary"
+              onClick={() =>
+                exercisesFieldArray.append(createDefaultExercise(exercisesFieldArray.fields.length))
+              }
+            >
+              [ + ADD EXERCISE ]
+            </Button>
+            <Button type="submit" disabled={mutation.isPending || form.formState.isSubmitting}>
+              {mutation.isPending ? "[ SAVING... ]" : "[ SAVE WORKOUT ]"}
+            </Button>
+          </div>
         </div>
       </form>
     </section>
