@@ -129,13 +129,6 @@ export default function WorkoutsPage() {
     });
   });
 
-  const selectedPlanIndex = useMemo(() => {
-    if (!plansQuery.data || !selectedPlanName) {
-      return -1;
-    }
-    return plansQuery.data.findIndex((plan) => plan.name === selectedPlanName);
-  }, [plansQuery.data, selectedPlanName]);
-
   const sessionsQuery = useQuery({
     queryKey: queryKeys.sessions,
     queryFn: getSessions,
@@ -162,7 +155,7 @@ export default function WorkoutsPage() {
 
   return (
     <section className="space-y-3">
-      <div className="overflow-x-auto border-y border-border bg-card">
+      <div className="sticky top-0 z-40 overflow-x-auto border-y border-border bg-card">
         <div className="flex min-w-max">
           {plansQuery.data?.map((plan) => {
             const isSelected = plan.name === (selectedPlanName ?? plansQuery.data?.[0]?.name);
@@ -184,61 +177,8 @@ export default function WorkoutsPage() {
         </div>
       </div>
 
-      <div className="border border-border bg-card px-4 py-3">
-        <p className="text-xs font-bold text-primary">
-          &gt; {(selectedPlanName ?? plansQuery.data?.[0]?.name ?? "WORKOUT").toUpperCase()}
-          {selectedPlanIndex >= 0 ? ` [${selectedPlanIndex + 1}]` : ""}
-        </p>
-      </div>
-
       <form className="space-y-3" onSubmit={onSubmit}>
-        <div className="grid grid-cols-2 gap-2">
-          <Input
-            type="text"
-            readOnly
-            aria-label="Plan name"
-            className="border-border bg-card text-xs"
-            {...form.register("plan_name")}
-          />
-          <Input
-            type="number"
-            min={1}
-            aria-label="Week number"
-            className="border-border bg-card text-xs"
-            {...form.register("week_number", { valueAsNumber: true })}
-          />
-        </div>
-
-        <div className="space-y-2">
-          {exercisesFieldArray.fields.map((exerciseField, exerciseIndex) => (
-            <ExerciseEditor
-              key={exerciseField.id}
-              index={exerciseIndex}
-              control={form.control}
-              register={form.register}
-              canRemove={exercisesFieldArray.fields.length > 1}
-              onRemove={() => exercisesFieldArray.remove(exerciseIndex)}
-            />
-          ))}
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="border-primary text-primary"
-            onClick={() =>
-              exercisesFieldArray.append(createDefaultExercise(exercisesFieldArray.fields.length))
-            }
-          >
-            [ + ADD EXERCISE ]
-          </Button>
-          <Button type="submit" disabled={mutation.isPending || form.formState.isSubmitting}>
-            {mutation.isPending ? "[ SAVING... ]" : "[ SAVE WORKOUT ]"}
-          </Button>
-        </div>
-
-        <div className="border-t border-border bg-card p-2">
+        <div className="sticky top-10 z-30 border-y border-border bg-card p-2">
           <div className="flex overflow-x-auto">
             {availableWeeks.map((week) => {
               const selected = week === currentWeek;
@@ -268,6 +208,53 @@ export default function WorkoutsPage() {
               [+ WEEK {Math.max(...availableWeeks) + 1}]
             </button>
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            type="text"
+            readOnly
+            aria-label="Plan name"
+            className="border-border bg-card text-xs"
+            {...form.register("plan_name")}
+          />
+          <Input
+            type="number"
+            min={1}
+            aria-label="Week number"
+            className="border-border bg-card text-xs"
+            {...form.register("week_number", { valueAsNumber: true })}
+          />
+        </div>
+
+        <div className="space-y-2">
+          {exercisesFieldArray.fields.map((exerciseField, exerciseIndex) => (
+            <ExerciseEditor
+              key={exerciseField.id}
+              index={exerciseIndex}
+              control={form.control}
+              register={form.register}
+              setValue={form.setValue}
+              canRemove={exercisesFieldArray.fields.length > 1}
+              onRemove={() => exercisesFieldArray.remove(exerciseIndex)}
+            />
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="border-primary text-primary"
+            onClick={() =>
+              exercisesFieldArray.append(createDefaultExercise(exercisesFieldArray.fields.length))
+            }
+          >
+            [ + ADD EXERCISE ]
+          </Button>
+          <Button type="submit" disabled={mutation.isPending || form.formState.isSubmitting}>
+            {mutation.isPending ? "[ SAVING... ]" : "[ SAVE WORKOUT ]"}
+          </Button>
         </div>
       </form>
     </section>
