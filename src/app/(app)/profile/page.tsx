@@ -92,6 +92,8 @@ export default function ProfilePage() {
   const [status, setStatus] = useState<string | null>(null);
   const [loadingSeed, setLoadingSeed] = useState(false);
   const [loadingClear, setLoadingClear] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [confirmSteps, setConfirmSteps] = useState([false, false, false]);
   const queryClient = useQueryClient();
 
   const plansQuery = useQuery({ queryKey: queryKeys.plans, queryFn: getPlans });
@@ -158,10 +160,6 @@ export default function ProfilePage() {
       return;
     }
 
-    if (!window.confirm("Clear all plans and workout history? This cannot be undone.")) {
-      return;
-    }
-
     setLoadingClear(true);
     setStatus(null);
     try {
@@ -178,12 +176,16 @@ export default function ProfilePage() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.plans });
       await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
       setStatus("> All data cleared.");
+      setShowClearConfirm(false);
+      setConfirmSteps([false, false, false]);
     } catch {
       setStatus("> Failed to clear data. Please try again.");
     } finally {
       setLoadingClear(false);
     }
   };
+
+  const allClearConfirmed = confirmSteps.every(Boolean);
 
   return (
     <section className="space-y-3">
@@ -260,13 +262,58 @@ export default function ProfilePage() {
         />
         <SettingRow
           title="CLEAR ALL DATA"
-          subtitle="Delete all plans and workout history"
+          subtitle={
+            showClearConfirm
+              ? "Click all 3 confirmation buttons, then clear data"
+              : "Delete all plans and workout history"
+          }
           destructive
           icon={<Trash2 className="size-4" />}
-          onClick={clearAllData}
+          onClick={() => {
+            setStatus(null);
+            setShowClearConfirm((current) => !current);
+            if (showClearConfirm) {
+              setConfirmSteps([false, false, false]);
+            }
+          }}
           disabled={loadingSeed || loadingClear}
           loading={loadingClear}
         />
+        {showClearConfirm ? (
+          <div className="space-y-2 px-4 py-3">
+            <div className="grid grid-cols-3 gap-2">
+              {confirmSteps.map((confirmed, index) => (
+                <button
+                  key={`confirm-step-${index}`}
+                  type="button"
+                  disabled={loadingSeed || loadingClear}
+                  onClick={() => {
+                    setConfirmSteps((current) =>
+                      current.map((value, valueIndex) =>
+                        valueIndex === index ? !value : value,
+                      ),
+                    );
+                  }}
+                  className={`border px-2 py-2 text-[10px] font-bold ${
+                    confirmed
+                      ? "border-destructive bg-destructive/10 text-destructive"
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  CONFIRM {index + 1}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={clearAllData}
+              disabled={loadingSeed || loadingClear || !allClearConfirmed}
+              className="w-full border border-destructive px-3 py-2 text-[11px] font-bold text-destructive disabled:opacity-60"
+            >
+              {loadingClear ? "CLEARING..." : "CLEAR ALL DATA NOW"}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {status ? (
@@ -278,10 +325,6 @@ export default function ProfilePage() {
       <div className="border border-border bg-card">
         <SectionHeader title="ACCOUNT" />
         <div className="border-b border-border px-4 py-3">
-          <div className="mb-2 flex items-center gap-3 text-destructive">
-            <LogOut className="size-4" />
-            <p className="text-xs font-bold">LOGOUT</p>
-          </div>
           <LogoutButton />
         </div>
 

@@ -7,9 +7,9 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 export function AppHeader() {
   return (
-    <header className="sticky top-0 z-20 border-b border-border bg-background">
+    <header className="sticky top-0 z-50 border-b border-border bg-background">
       <div className="mx-auto flex h-14 w-full max-w-md items-center justify-between px-4">
-        <div className="flex items-center gap-2">
+        <Link href="/" aria-label="OpenGym home" className="flex items-center gap-2">
           <Image
             src="/logo/opengym_icon_v2.png"
             alt="OpenGym"
@@ -18,7 +18,7 @@ export function AppHeader() {
             className="size-[18px]"
           />
           <p className="text-sm font-bold text-primary">&gt; OPENGYM</p>
-        </div>
+        </Link>
         <div className="flex items-center gap-1 text-primary">
           <OfflineIndicator />
           <Link href="/" aria-label="Dashboard" className="p-2">
