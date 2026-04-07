@@ -4,7 +4,6 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 
-import { env } from "@/lib/env";
 import {
   clearAuthTokens,
   getAccessToken,
@@ -23,7 +22,7 @@ type RefreshResponse = {
   refreshToken?: string;
 };
 
-const apiBaseUrl = env.apiUrl;
+const apiBaseUrl = "/api/backend";
 
 export const http = axios.create({
   baseURL: apiBaseUrl,
@@ -91,10 +90,6 @@ async function refreshAccessToken() {
 }
 
 http.interceptors.request.use((config) => {
-  if (!apiBaseUrl) {
-    throw new Error("NEXT_PUBLIC_API_URL is not defined");
-  }
-
   const accessToken = getAccessToken();
 
   if (accessToken) {
