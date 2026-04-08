@@ -209,7 +209,15 @@ export function ExerciseEditor({
         type="button"
         variant="outline"
         className="border-primary text-xs text-primary"
-        onClick={() => setsFieldArray.append({ reps: 8, weight: 20, rpe: 7 })}
+        onClick={() => {
+          const lastSet = exerciseValues?.sets?.[exerciseValues.sets.length - 1];
+          const newSet = {
+            reps: lastSet?.reps ?? 8,
+            weight: lastSet?.weight ?? 0,
+            rpe: lastSet?.rpe,
+          };
+          setsFieldArray.append(newSet);
+        }}
       >
         [ + ADD SET ]
       </Button>

@@ -1,241 +1,105 @@
-"use client";
+'use client';
 
-import { useState, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Download, Loader2, LogOut, Trash2 } from "lucide-react";
-import { useTheme } from "next-themes";
-
-import {
-  applySelectedAccent,
-  getAccentOptions,
-  getStoredAccentIndex,
-  setStoredAccentIndex,
-} from "@/components/providers/accent-provider";
-import { LogoutButton } from "@/components/auth/logout-button";
-import { queryKeys } from "@/lib/query-keys";
-import { samplePlans, sampleSessions } from "@/lib/sample-data";
-import { createPlan, deletePlan, getPlans } from "@/services/plans";
-import { createSession, deleteSession, getSessions } from "@/services/sessions";
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTheme } from 'next-themes';
+import { LogOut, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { AuthGuard } from '@/components/auth/auth-guard';
+import { useAuthStore } from '@/stores/auth';
+import { getAccentOptions, getStoredAccentIndex, setStoredAccentIndex, applySelectedAccent } from '@/components/providers/accent-provider';
+import { api } from '@/lib/api/http';
+import { useToast } from '@/components/toast';
 
 function SectionHeader({ title }: { title: string }) {
   return (
     <div className="border-b border-border px-4 py-2">
-      <p className="text-xs font-bold text-primary">&gt; {title}</p>
+      <p className="font-mono text-xs font-bold text-primary">&gt; {title}</p>
     </div>
   );
 }
 
-function ThemeOption({
-  label,
-  selected,
-  onClick,
-}: {
-  label: string;
-  selected: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex-1 border px-2 py-2 text-[10px] font-bold ${
-        selected
-          ? "border-primary bg-primary/10 text-primary"
-          : "border-border text-muted-foreground"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function SettingRow({
-  title,
-  subtitle,
-  icon,
-  destructive,
-  onClick,
-  disabled,
-  loading,
-}: {
-  title: string;
-  subtitle: string;
-  icon: ReactNode;
-  destructive?: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-  loading?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left disabled:opacity-60"
-    >
-      <div className={destructive ? "text-destructive" : "text-primary"}>{icon}</div>
-      <div className="flex-1">
-        <p className={`text-xs font-bold ${destructive ? "text-destructive" : "text-foreground"}`}>
-          {title}
-        </p>
-        <p className="text-[10px] text-muted-foreground">{subtitle}</p>
-      </div>
-      {loading ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
-    </button>
-  );
-}
-
-export default function ProfilePage() {
-  const accents = getAccentOptions();
+export default function SettingsPage() {
+  const router = useRouter();
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const { logout } = useAuthStore();
+  const accents = getAccentOptions();
   const [accentIndex, setAccentIndex] = useState(() => getStoredAccentIndex());
-  const [status, setStatus] = useState<string | null>(null);
-  const [loadingSeed, setLoadingSeed] = useState(false);
-  const [loadingClear, setLoadingClear] = useState(false);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [confirmSteps, setConfirmSteps] = useState([false, false, false]);
-  const queryClient = useQueryClient();
+  const { showError, showSuccess, ToastComponent } = useToast();
 
-  const plansQuery = useQuery({ queryKey: queryKeys.plans, queryFn: getPlans });
-  const sessionsQuery = useQuery({ queryKey: queryKeys.sessions, queryFn: getSessions });
-
-  const currentAccent = accents[accentIndex];
-
-  const seedData = async () => {
-    if (loadingSeed) {
-      return;
-    }
-
-    setLoadingSeed(true);
-    setStatus(null);
-    try {
-      const existingPlans = plansQuery.data ?? [];
-      const existingPlanNames = new Set(existingPlans.map((plan) => plan.name.toLowerCase()));
-
-      let plansAdded = 0;
-      for (const plan of samplePlans) {
-        if (existingPlanNames.has(plan.name.toLowerCase())) {
-          continue;
-        }
-        await createPlan({
-          name: plan.name,
-          exercises: plan.exercises.map((exercise, index) => ({
-            name: exercise.name,
-            sets: exercise.sets,
-            order_index: index,
-          })),
-        });
-        plansAdded += 1;
-      }
-
-      const existingSessions = sessionsQuery.data ?? [];
-      const existingSessionKeys = new Set(
-        existingSessions.map(
-          (session) => `${session.plan_name ?? "custom"}-${session.week_number}-${session.date}`,
-        ),
-      );
-
-      let sessionsAdded = 0;
-      for (const session of sampleSessions) {
-        const key = `${session.plan_name ?? "custom"}-${session.week_number}-${session.date}`;
-        if (existingSessionKeys.has(key)) {
-          continue;
-        }
-        await createSession(session);
-        sessionsAdded += 1;
-      }
-
-      await queryClient.invalidateQueries({ queryKey: queryKeys.plans });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
-      setStatus(`> Sample data added: ${plansAdded} plans, ${sessionsAdded} workouts.`);
-    } catch {
-      setStatus("> Error loading sample data. Please check your connection and try again.");
-    } finally {
-      setLoadingSeed(false);
-    }
+  const handleAccentChange = (index: number) => {
+    setAccentIndex(index);
+    setStoredAccentIndex(index);
+    applySelectedAccent(index, resolvedTheme !== 'light');
   };
 
-  const clearAllData = async () => {
-    if (loadingClear) {
-      return;
-    }
-
-    setLoadingClear(true);
-    setStatus(null);
-    try {
-      const sessions = sessionsQuery.data ?? [];
-      for (const session of sessions) {
-        await deleteSession(session.id);
-      }
-
-      const plans = plansQuery.data ?? [];
-      for (const plan of plans) {
-        await deletePlan(plan.id);
-      }
-
-      await queryClient.invalidateQueries({ queryKey: queryKeys.plans });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
-      setStatus("> All data cleared.");
-      setShowClearConfirm(false);
-      setConfirmSteps([false, false, false]);
-    } catch {
-      setStatus("> Failed to clear data. Please try again.");
-    } finally {
-      setLoadingClear(false);
-    }
+  const handleLogout = () => {
+    logout();
+    router.push('/login');
   };
 
-  const allClearConfirmed = confirmSteps.every(Boolean);
+  const handleClearData = async () => {
+    if (!confirm('Clear all data? This cannot be undone.')) return;
+    try {
+      const [plansRes, sessionsRes] = await Promise.all([api.get('/plans'), api.get('/sessions')]);
+      for (const session of sessionsRes.data) {
+        await api.delete(`/sessions/${session.id}`);
+      }
+      for (const plan of plansRes.data) {
+        await api.delete(`/plans/${plan.id}`);
+      }
+      showSuccess('All data cleared');
+    } catch (e) {
+      console.error('Failed to clear data', e);
+      showError('Failed to clear data');
+    }
+  };
 
   return (
-    <section className="space-y-3">
-      <div className="border border-border bg-card">
-        <SectionHeader title="APPEARANCE" />
-        <div className="space-y-3 p-4">
-          <div>
-            <p className="text-[10px] text-muted-foreground">THEME</p>
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              &gt; {(theme ?? "system").toUpperCase()}
-            </p>
-            <div className="mt-2 flex gap-2">
-              <ThemeOption
-                label="DARK"
-                selected={theme === "dark" || (theme === "system" && resolvedTheme === "dark")}
-                onClick={() => setTheme("dark")}
-              />
-              <ThemeOption
-                label="LIGHT"
-                selected={theme === "light" || (theme === "system" && resolvedTheme === "light")}
-                onClick={() => setTheme("light")}
-              />
-              <ThemeOption
-                label="SYSTEM"
-                selected={theme === "system"}
-                onClick={() => setTheme("system")}
-              />
-            </div>
-          </div>
+    <AuthGuard>
+      <div className="space-y-4">
+        {ToastComponent}
+        <h1 className="font-mono text-xl font-bold">[ SETTINGS ]</h1>
 
-          <div>
-            <p className="text-[10px] text-muted-foreground">ACCENT COLOR</p>
-            <p className="mt-1 text-[10px] text-muted-foreground">&gt; {currentAccent.name}</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {accents.map((accent, index) => {
-                const selected = index === accentIndex;
-                return (
+        <Card>
+          <SectionHeader title="APPEARANCE" />
+          <CardContent className="space-y-4 p-4">
+            <div>
+              <p className="font-mono text-sm text-muted-foreground">THEME</p>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  variant={theme === 'dark' || (theme === 'system' && resolvedTheme === 'dark') ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setTheme('dark')}
+                  className="font-mono"
+                >
+                  DARK
+                </Button>
+                <Button
+                  variant={theme === 'light' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setTheme('light')}
+                  className="font-mono"
+                >
+                  LIGHT
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <p className="font-mono text-sm text-muted-foreground">ACCENT</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {accents.map((accent, index) => (
                   <button
                     key={accent.name}
                     type="button"
-                    onClick={() => {
-                      setAccentIndex(index);
-                      setStoredAccentIndex(index);
-                      applySelectedAccent(index, resolvedTheme !== "light");
-                    }}
-                    className={`border px-2 py-2 text-left ${
-                      selected ? "border-primary" : "border-border"
+                    onClick={() => handleAccentChange(index)}
+                    className={`border px-3 py-2 text-left ${
+                      index === accentIndex ? 'border-primary bg-primary/10' : 'border-border'
                     }`}
                   >
-                    <p className={`text-[10px] font-bold ${selected ? "text-primary" : "text-muted-foreground"}`}>
+                    <p className={`font-mono text-xs font-bold ${index === accentIndex ? 'text-primary' : 'text-muted-foreground'}`}>
                       {accent.name}
                     </p>
                     <div className="mt-1 flex gap-1">
@@ -243,98 +107,36 @@ export default function ProfilePage() {
                       <span className="h-3 w-3 border border-border" style={{ backgroundColor: accent.light }} />
                     </div>
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <SectionHeader title="DATA" />
+          <CardContent className="p-4">
+            <Button variant="destructive" onClick={handleClearData} className="w-full font-mono">
+              <Trash2 className="mr-2 size-4" />
+              [ CLEAR ALL DATA ]
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <SectionHeader title="ACCOUNT" />
+          <CardContent className="p-4">
+            <Button variant="outline" onClick={handleLogout} className="w-full font-mono">
+              <LogOut className="mr-2 size-4" />
+              [ LOGOUT ]
+            </Button>
+          </CardContent>
+        </Card>
+
+        <div className="text-center">
+          <p className="font-mono text-xs text-muted-foreground">OPENGYM v1.0.0</p>
         </div>
       </div>
-
-      <div className="border border-border bg-card">
-        <SectionHeader title="DATA" />
-        <SettingRow
-          title="LOAD SAMPLE DATA"
-          subtitle="Add sample plans and workouts for testing"
-          icon={<Download className="size-4" />}
-          onClick={seedData}
-          disabled={loadingSeed || loadingClear}
-          loading={loadingSeed}
-        />
-        <SettingRow
-          title="CLEAR ALL DATA"
-          subtitle={
-            showClearConfirm
-              ? "Click all 3 confirmation buttons, then clear data"
-              : "Delete all plans and workout history"
-          }
-          destructive
-          icon={<Trash2 className="size-4" />}
-          onClick={() => {
-            setStatus(null);
-            setShowClearConfirm((current) => !current);
-            if (showClearConfirm) {
-              setConfirmSteps([false, false, false]);
-            }
-          }}
-          disabled={loadingSeed || loadingClear}
-          loading={loadingClear}
-        />
-        {showClearConfirm ? (
-          <div className="space-y-2 px-4 py-3">
-            <div className="grid grid-cols-3 gap-2">
-              {confirmSteps.map((confirmed, index) => (
-                <button
-                  key={`confirm-step-${index}`}
-                  type="button"
-                  disabled={loadingSeed || loadingClear}
-                  onClick={() => {
-                    setConfirmSteps((current) =>
-                      current.map((value, valueIndex) =>
-                        valueIndex === index ? !value : value,
-                      ),
-                    );
-                  }}
-                  className={`border px-2 py-2 text-[10px] font-bold ${
-                    confirmed
-                      ? "border-destructive bg-destructive/10 text-destructive"
-                      : "border-border text-muted-foreground"
-                  }`}
-                >
-                  CONFIRM {index + 1}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={clearAllData}
-              disabled={loadingSeed || loadingClear || !allClearConfirmed}
-              className="w-full border border-destructive px-3 py-2 text-[11px] font-bold text-destructive disabled:opacity-60"
-            >
-              {loadingClear ? "CLEARING..." : "CLEAR ALL DATA NOW"}
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      {status ? (
-        <div className="border border-border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">{status}</p>
-        </div>
-      ) : null}
-
-      <div className="border border-border bg-card">
-        <SectionHeader title="ACCOUNT" />
-        <div className="border-b border-border px-4 py-3">
-          <LogoutButton />
-        </div>
-
-        <SectionHeader title="ABOUT" />
-        <div className="px-4 py-6 text-center">
-          <p className="text-[10px] text-muted-foreground">VERSION</p>
-          <p className="mt-1 text-sm">1.0.0</p>
-          <p className="mt-4 text-xs text-muted-foreground">&gt; Made by Aalish</p>
-        </div>
-      </div>
-    </section>
+    </AuthGuard>
   );
 }

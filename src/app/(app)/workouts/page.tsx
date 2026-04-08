@@ -1,267 +1,356 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFieldArray, useForm, useWatch } from "react-hook-form";
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Plus, Trash2, Save } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { AuthGuard } from '@/components/auth/auth-guard';
+import { api } from '@/lib/api/http';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { addToPendingWrites } from '@/lib/db';
+import { useToast } from '@/components/toast';
+import type { Plan } from '@/types';
 
-import { ExerciseEditor } from "@/components/workout/exercise-editor";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { queryKeys } from "@/lib/query-keys";
-import { createDefaultExercise, type WorkoutFormValues } from "@/lib/workout-form";
-import { getPlans } from "@/services/plans";
-import { createSession, getSessions } from "@/services/sessions";
-import type { Session } from "@/services/types";
+interface ExerciseForm {
+  name: string;
+  sets: number;
+}
 
-function buildExercisesFromPlan(planName: string | null, plans: Awaited<ReturnType<typeof getPlans>>) {
-  const selectedPlan = plans.find((plan) => plan.name === planName);
-  if (!selectedPlan) {
-    return [createDefaultExercise(0)];
-  }
+interface PlanForm {
+  name: string;
+  exercises: ExerciseForm[];
+}
 
-  return selectedPlan.exercises
-    .sort((a, b) => a.order_index - b.order_index)
-    .map((exercise, exerciseIndex) => ({
-      name: exercise.name,
-      note: "",
-      order_index: exerciseIndex,
-      sets: Array.from({ length: exercise.sets }).map(() => ({
-        reps: 8,
-        weight: 0,
-        rpe: undefined,
-        note: "",
-      })),
-    }));
+interface SessionSetForm {
+  reps: number;
+  weight: number;
+}
+
+interface SessionExerciseForm {
+  name: string;
+  sets: SessionSetForm[];
+}
+
+interface SessionForm {
+  plan_name: string;
+  week_number: number;
+  exercises: SessionExerciseForm[];
 }
 
 export default function WorkoutsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const queryClient = useQueryClient();
+  const { isOnline } = useOnlineStatus();
+  const { showError, ToastComponent } = useToast();
 
-  const plansQuery = useQuery({
-    queryKey: queryKeys.plans,
-    queryFn: getPlans,
+  const mode = searchParams.get('mode') || 'log';
+  const planId = searchParams.get('planId');
+
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [planForm, setPlanForm] = useState<PlanForm>({ name: '', exercises: [{ name: '', sets: 3 }] });
+  const [sessionForm, setSessionForm] = useState<SessionForm>({
+    plan_name: '',
+    week_number: 1,
+    exercises: []
   });
 
-  const selectedPlanName = searchParams.get("plan");
+  const [saving, setSaving] = useState(false);
 
-  const form = useForm<WorkoutFormValues>({
-    defaultValues: {
-      plan_name: selectedPlanName ?? "",
-      week_number: 1,
-      exercises: [createDefaultExercise(0)],
-    },
-  });
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const plansRes = await api.get('/plans');
+      setPlans(plansRes.data);
+    } catch (e) {
+      console.error('Failed to load data', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!plansQuery.data) {
-      return;
-    }
+    loadData();
+  }, []);
 
-    const safePlanName =
-      selectedPlanName && plansQuery.data.some((plan) => plan.name === selectedPlanName)
-        ? selectedPlanName
-        : (plansQuery.data[0]?.name ?? "");
-
-    form.reset({
-      plan_name: safePlanName,
-      week_number: 1,
-      exercises: buildExercisesFromPlan(safePlanName, plansQuery.data),
-    });
-  }, [form, plansQuery.data, selectedPlanName]);
-
-  const exercisesFieldArray = useFieldArray({
-    control: form.control,
-    name: "exercises",
-  });
-
-  const mutation = useMutation({
-    mutationFn: createSession,
-    onMutate: async (newSession) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.sessions });
-
-      const previousSessions = queryClient.getQueryData<Session[]>(queryKeys.sessions);
-
-      const optimisticSession: Session = {
-        id: `temp-${Date.now()}`,
-        date: newSession.date,
-        plan_name: newSession.plan_name ?? null,
-        week_number: newSession.week_number,
-        exercises: newSession.exercises,
-      };
-
-      queryClient.setQueryData<Session[]>(queryKeys.sessions, (current = []) => [
-        optimisticSession,
-        ...current,
-      ]);
-
-      return { previousSessions };
-    },
-    onError: (_error, _variables, context) => {
-      if (context?.previousSessions) {
-        queryClient.setQueryData(queryKeys.sessions, context.previousSessions);
+  useEffect(() => {
+    if (mode === 'log' && plans.length > 0) {
+      const selectedPlan = planId ? plans.find(p => p.id === planId) : plans[0];
+      if (selectedPlan) {
+        setSessionForm({
+          plan_name: selectedPlan.name,
+          week_number: 1,
+          exercises: selectedPlan.exercises.map(ex => ({
+            name: ex.name,
+            sets: Array.from({ length: ex.sets }, () => ({ reps: 8, weight: 0 }))
+          }))
+        });
       }
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
-      router.push("/history");
-    },
-  });
+    }
+  }, [mode, plans, planId]);
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    await mutation.mutateAsync({
-      plan_name: values.plan_name || undefined,
-      week_number: values.week_number,
+  const handleCreatePlan = async () => {
+    if (!planForm.name.trim()) return;
+    setSaving(true);
+
+    const payload = {
+      name: planForm.name,
+      exercises: planForm.exercises.map((ex, idx) => ({
+        name: ex.name,
+        sets: ex.sets,
+        order_index: idx
+      }))
+    };
+
+    try {
+      if (isOnline) {
+        await api.post('/plans', payload);
+      } else {
+        await addToPendingWrites('CREATE', 'plan', { id: crypto.randomUUID(), ...payload });
+      }
+      await loadData();
+      router.push('/');
+    } catch (e) {
+      console.error('Failed to create plan', e);
+      showError('Failed to create plan');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLogSession = async () => {
+    if (sessionForm.exercises.length === 0) return;
+    setSaving(true);
+
+    const payload = {
+      plan_name: sessionForm.plan_name || undefined,
       date: new Date().toISOString(),
-      exercises: values.exercises.map((exercise, exerciseIndex) => ({
-        name: exercise.name,
-        note: exercise.note || undefined,
-        order_index: exerciseIndex,
-        sets: exercise.sets.map((set) => ({
+      week_number: sessionForm.week_number,
+      exercises: sessionForm.exercises.map((ex, exIdx) => ({
+        name: ex.name,
+        note: null,
+        order_index: exIdx,
+        sets: ex.sets.map(set => ({
           reps: set.reps,
           weight: set.weight,
-          rpe: set.rpe ?? null,
-          note: set.note || undefined,
-        })),
-      })),
-    });
-  });
+          rpe: null,
+          note: null
+        }))
+      }))
+    };
 
-  const sessionsQuery = useQuery({
-    queryKey: queryKeys.sessions,
-    queryFn: getSessions,
-  });
-
-  const availableWeeks = useMemo(() => {
-    const activePlan = selectedPlanName ?? plansQuery.data?.[0]?.name;
-    if (!activePlan || !sessionsQuery.data) {
-      return [1];
+    try {
+      if (isOnline) {
+        await api.post('/sessions', payload);
+      } else {
+        await addToPendingWrites('CREATE', 'session', { id: crypto.randomUUID(), ...payload });
+      }
+      router.push('/history');
+    } catch (e) {
+      console.error('Failed to log session', e);
+      showError('Failed to log session');
+    } finally {
+      setSaving(false);
     }
+  };
 
-    const weeks = Array.from(
-      new Set(
-        sessionsQuery.data
-          .filter((session) => session.plan_name === activePlan)
-          .map((session) => session.week_number),
-      ),
-    ).sort((a, b) => a - b);
+  const addExerciseToPlan = () => {
+    setPlanForm(prev => ({
+      ...prev,
+      exercises: [...prev.exercises, { name: '', sets: 3 }]
+    }));
+  };
 
-    return weeks.length ? weeks : [1];
-  }, [plansQuery.data, selectedPlanName, sessionsQuery.data]);
+  const updatePlanExercise = (idx: number, field: keyof ExerciseForm, value: string | number) => {
+    setPlanForm(prev => ({
+      ...prev,
+      exercises: prev.exercises.map((ex, i) => i === idx ? { ...ex, [field]: value } : ex)
+    }));
+  };
 
-  const currentWeek = useWatch({ control: form.control, name: "week_number" });
+  const removePlanExercise = (idx: number) => {
+    setPlanForm(prev => ({
+      ...prev,
+      exercises: prev.exercises.filter((_, i) => i !== idx)
+    }));
+  };
 
-  return (
-    <section className="space-y-3">
-      <div className="sticky top-14 z-40 overflow-x-auto border-y border-border bg-card">
-        <div className="flex min-w-max">
-          {plansQuery.data?.map((plan) => {
-            const isSelected = plan.name === (selectedPlanName ?? plansQuery.data?.[0]?.name);
-            return (
-              <button
-                key={plan.id}
-                type="button"
-                onClick={() => router.replace(`/workouts?plan=${encodeURIComponent(plan.name)}`)}
-                className={`border-r border-border px-4 py-2 text-[11px] ${
-                  isSelected
-                    ? "bg-primary font-bold text-primary-foreground"
-                    : "text-foreground"
-                }`}
-              >
-                {plan.name.toUpperCase()}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+  const updateSessionSet = (exIdx: number, setIdx: number, field: keyof SessionSetForm, value: number) => {
+    setSessionForm(prev => ({
+      ...prev,
+      exercises: prev.exercises.map((ex, ei) => 
+        ei === exIdx ? {
+          ...ex,
+          sets: ex.sets.map((set, si) => si === setIdx ? { ...set, [field]: value } : set)
+        } : ex
+      )
+    }));
+  };
 
-      <form className="space-y-3" onSubmit={onSubmit}>
-        <div className="space-y-2">
-          <Input
-            type="text"
-            aria-label="Plan name"
-            placeholder="Workout title"
-            className="border-border bg-card text-xs"
-            {...form.register("plan_name")}
-          />
-          <div className="flex items-center gap-2">
-            <p className="text-xs font-bold text-muted-foreground">WEEK</p>
-            <Input
-              type="number"
-              min={1}
-              aria-label="Week number"
-              className="border-border bg-card text-xs"
-              {...form.register("week_number", { valueAsNumber: true })}
-            />
-          </div>
-        </div>
+  if (loading) {
+    return (
+      <AuthGuard>
+        <div className="py-8 text-center font-mono text-muted-foreground">[ LOADING... ]</div>
+      </AuthGuard>
+    );
+  }
 
-        <div className="space-y-2">
-          {exercisesFieldArray.fields.map((exerciseField, exerciseIndex) => (
-            <ExerciseEditor
-              key={exerciseField.id}
-              index={exerciseIndex}
-              control={form.control}
-              register={form.register}
-              setValue={form.setValue}
-              canRemove={exercisesFieldArray.fields.length > 1}
-              onRemove={() => exercisesFieldArray.remove(exerciseIndex)}
-            />
-          ))}
-        </div>
+  if (mode === 'create') {
+    return (
+      <AuthGuard>
+        {ToastComponent}
+        <div className="space-y-4">
+          <h1 className="font-mono text-xl font-bold">[ NEW PLAN ]</h1>
 
-        <div className="sticky bottom-0 z-30 space-y-2 bg-background pb-1">
-          <div className="border-y border-border bg-card p-2">
-            <div className="flex overflow-x-auto">
-              {availableWeeks.map((week) => {
-                const selected = week === currentWeek;
-                return (
-                  <button
-                    key={week}
-                    type="button"
-                    onClick={() => form.setValue("week_number", week)}
-                    className={`mr-1 border px-3 py-1 text-[11px] ${
-                      selected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border"
-                    }`}
-                  >
-                    WEEK {week}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => {
-                  const next = Math.max(...availableWeeks) + 1;
-                  form.setValue("week_number", next);
-                }}
-                className="border border-primary px-3 py-1 text-[11px] text-primary"
-              >
-                [+ WEEK {Math.max(...availableWeeks) + 1}]
-              </button>
-            </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-mono text-base">PLAN NAME</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Input
+                value={planForm.name}
+                onChange={(e) => setPlanForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g., PUSH DAY"
+                className="font-mono"
+              />
+            </CardContent>
+          </Card>
+
+          <div className="space-y-2">
+            <h2 className="font-mono text-sm font-bold text-muted-foreground">[ EXERCISES ]</h2>
+            {planForm.exercises.map((ex, idx) => (
+              <Card key={idx}>
+                <CardContent className="flex items-center gap-2 pt-4">
+                  <Input
+                    value={ex.name}
+                    onChange={(e) => updatePlanExercise(idx, 'name', e.target.value)}
+                    placeholder="Exercise name"
+                    className="flex-1 font-mono"
+                  />
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={ex.sets}
+                      onChange={(e) => updatePlanExercise(idx, 'sets', parseInt(e.target.value) || 1)}
+                      className="w-16 font-mono text-center"
+                    />
+                    <span className="font-mono text-sm text-muted-foreground">SETS</span>
+                  </div>
+                  {planForm.exercises.length > 1 && (
+                    <Button variant="ghost" size="icon" onClick={() => removePlanExercise(idx)}>
+                      <Trash2 className="size-4 text-destructive" />
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-primary text-primary"
-              onClick={() =>
-                exercisesFieldArray.append(createDefaultExercise(exercisesFieldArray.fields.length))
-              }
-            >
-              [ + ADD EXERCISE ]
+            <Button variant="outline" onClick={addExerciseToPlan}>
+              <Plus className="mr-2 size-4" />
+              [ ADD EXERCISE ]
             </Button>
-            <Button type="submit" disabled={mutation.isPending || form.formState.isSubmitting}>
-              {mutation.isPending ? "[ SAVING... ]" : "[ SAVE WORKOUT ]"}
+            <Button onClick={handleCreatePlan} disabled={saving || !planForm.name.trim()}>
+              <Save className="mr-2 size-4" />
+              {saving ? '[ SAVING... ]' : '[ SAVE PLAN ]'}
             </Button>
           </div>
         </div>
-      </form>
-    </section>
+      </AuthGuard>
+    );
+  }
+
+  return (
+    <AuthGuard>
+      {ToastComponent}
+      <div className="space-y-4">
+        <h1 className="font-mono text-xl font-bold">[ LOG WORKOUT ]</h1>
+
+        {plans.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center">
+              <p className="font-mono text-muted-foreground">NO PLANS AVAILABLE</p>
+              <Button className="mt-4" onClick={() => router.push('/workouts?mode=create')}>
+                [ CREATE PLAN ]
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-mono text-base">SELECT PLAN</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <select
+                  value={sessionForm.plan_name}
+                  onChange={(e) => setSessionForm(prev => ({ ...prev, plan_name: e.target.value }))}
+                  className="w-full border border-input bg-background px-3 py-2 font-mono text-sm"
+                >
+                  {plans.map(plan => (
+                    <option key={plan.id} value={plan.name}>{plan.name}</option>
+                  ))}
+                </select>
+              </CardContent>
+            </Card>
+
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm text-muted-foreground">WEEK</span>
+              <Input
+                type="number"
+                min={1}
+                value={sessionForm.week_number}
+                onChange={(e) => setSessionForm(prev => ({ ...prev, week_number: parseInt(e.target.value) || 1 }))}
+                className="w-20 font-mono text-center"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="font-mono text-sm font-bold text-muted-foreground">[ EXERCISES ]</h2>
+              {sessionForm.exercises.map((ex, exIdx) => (
+                <Card key={exIdx}>
+                  <CardHeader>
+                    <CardTitle className="font-mono text-base">{ex.name}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {ex.sets.map((set, setIdx) => (
+                      <div key={setIdx} className="flex items-center gap-2">
+                        <span className="font-mono text-sm text-muted-foreground w-12">SET {setIdx + 1}</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={set.reps}
+                          onChange={(e) => updateSessionSet(exIdx, setIdx, 'reps', parseInt(e.target.value) || 0)}
+                          className="w-20 font-mono text-center"
+                          placeholder="REPS"
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          value={set.weight}
+                          onChange={(e) => updateSessionSet(exIdx, setIdx, 'weight', parseFloat(e.target.value) || 0)}
+                          className="w-24 font-mono text-center"
+                          placeholder="WEIGHT"
+                        />
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <Button onClick={handleLogSession} disabled={saving} className="w-full">
+              <Save className="mr-2 size-4" />
+              {saving ? '[ SAVING... ]' : '[ FINISH WORKOUT ]'}
+            </Button>
+          </>
+        )}
+      </div>
+    </AuthGuard>
   );
 }

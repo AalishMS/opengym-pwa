@@ -1,63 +1,107 @@
-"use client";
+'use client';
 
-import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { Plus, Dumbbell, ChevronRight, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { AuthGuard } from '@/components/auth/auth-guard';
+import { OfflineIndicator } from '@/components/pwa/offline-indicator';
+import { api } from '@/lib/api/http';
 
-import { PlanCard } from "@/components/opengym/plan-card";
-import { queryKeys } from "@/lib/query-keys";
-import { getPlans } from "@/services/plans";
+interface Plan {
+  id: string;
+  name: string;
+  exercises: { id: string; name: string; sets: number; order_index: number }[];
+  synced: boolean;
+}
 
-export default function HomePage() {
-  const plansQuery = useQuery({
-    queryKey: queryKeys.plans,
-    queryFn: getPlans,
-  });
+export default function DashboardPage() {
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { isOnline, triggerSync } = useOnlineStatus();
 
-  if (plansQuery.isLoading) {
-    return (
-      <section className="flex flex-1 items-center justify-center">
-        <div className="space-y-2 text-center">
-          <p className="text-sm text-primary">&gt; LOADING PLANS...</p>
-        </div>
-      </section>
-    );
-  }
+  const loadPlans = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/plans');
+      setPlans(res.data);
+    } catch {
+      console.error('Failed to load plans');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  if (plansQuery.isError) {
-    return (
-      <section className="pt-4">
-        <div className="border border-destructive bg-destructive/10 p-4 text-center">
-          <p className="text-sm font-bold text-destructive">&gt; ERROR</p>
-          <p className="mt-2 text-xs text-destructive">Could not load workout plans.</p>
-        </div>
-      </section>
-    );
-  }
+  useEffect(() => {
+    loadPlans();
+  }, [isOnline]);
 
-  if (!plansQuery.data?.length) {
-    return (
-      <section className="flex flex-1 items-center justify-center">
-        <div className="text-center">
-          <p className="text-sm text-muted-foreground">&gt; NO PLANS FOUND</p>
-          <p className="mt-2 text-xs text-muted-foreground">Create your first workout plan</p>
-        </div>
-      </section>
-    );
-  }
+  const handleSync = async () => {
+    await triggerSync();
+    await loadPlans();
+  };
 
   return (
-    <section className="space-y-3">
-      <div className="grid grid-cols-2 gap-2">
-        {plansQuery.data.map((plan, index) => (
-          <PlanCard key={plan.id} plan={plan} index={index} />
-        ))}
+    <AuthGuard>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="font-mono text-xl font-bold">[ PLANS ]</h1>
+          {isOnline && (
+            <Button variant="ghost" size="icon" onClick={handleSync}>
+              <RefreshCw className="size-4" />
+            </Button>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="py-8 text-center text-muted-foreground font-mono">
+            [ LOADING... ]
+          </div>
+        ) : plans.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center">
+              <Dumbbell className="mx-auto mb-4 size-12 text-muted-foreground" />
+              <p className="mb-4 font-mono text-muted-foreground">NO PLANS YET</p>
+              <Link href="/workouts?mode=create">
+                <Button>
+                  <Plus className="mr-2 size-4" />
+                  [ CREATE PLAN ]
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {plans.map((plan) => (
+              <Link key={plan.id} href={`/workouts?planId=${plan.id}`}>
+                <Card className="cursor-pointer transition-colors hover:bg-muted">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="font-mono text-base">{plan.name}</CardTitle>
+                    <ChevronRight className="size-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent className="pb-3">
+                    <p className="font-mono text-sm text-muted-foreground">
+                      {plan.exercises.length} EXERCISES
+                      {!plan.synced && <span className="text-destructive"> [PENDING]</span>}
+                    </p>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        <Link href="/workouts?mode=create">
+          <Button className="w-full">
+            <Plus className="mr-2 size-4" />
+            [ NEW PLAN ]
+          </Button>
+        </Link>
+
+        <OfflineIndicator />
       </div>
-      <Link
-        href="/workouts"
-        className="fixed bottom-20 right-4 border border-primary bg-primary px-3 py-2 text-sm font-bold text-primary-foreground"
-      >
-        [ + ]
-      </Link>
-    </section>
+    </AuthGuard>
   );
 }

@@ -1,8 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
-import { BarChart3, History, Settings } from "lucide-react";
+import { BarChart3, History, Settings, TrendingUp } from "lucide-react";
 
-import { OfflineIndicator } from "@/components/opengym/offline-indicator";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 export function AppHeader() {
@@ -20,9 +19,11 @@ export function AppHeader() {
           <p className="text-sm font-bold text-primary">&gt; OPENGYM</p>
         </Link>
         <div className="flex items-center gap-1 text-primary">
-          <OfflineIndicator />
           <Link href="/" aria-label="Dashboard" className="p-2">
             <BarChart3 className="size-4" />
+          </Link>
+          <Link href="/stats" aria-label="Stats" className="p-2">
+            <TrendingUp className="size-4" />
           </Link>
           <Link href="/history" aria-label="History" className="p-2">
             <History className="size-4" />
